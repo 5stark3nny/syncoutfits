@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#080808">
+  <meta name="description" content="SYNCOUTFITS — everyday streetwear, built different.">
+  <title>SYNCOUTFITS — Your style. Your rules.</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="announcement">SYNC YOUR STYLE — STREETWEAR FOR EVERY DAY</div>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="SYNCOUTFITS home">
+      <span class="brand-word">SYNC</span><span class="brand-rule"></span>
+    </a>
+    <nav><a href="#shop">SHOP</a><a href="#story">OUR STORY</a></nav>
+    <button id="cart-open" class="cart-button" aria-label="Open cart">BAG <span id="cart-count">0</span></button>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">THE FIRST DROP</p>
+        <h1>OWN YOUR<br><span>EVERYDAY.</span></h1>
+        <p>Clean essentials. Bold identity. Made to move with you.</p>
+        <a class="button button-light" href="#shop">SHOP THE DROP <span>↗</span></a>
+      </div>
+      <div class="hero-art">
+        <img src="https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=1000&q=85" alt="Black streetwear T-shirt product styling">
+        <div class="hero-stamp">SYNC<br>YOUR<br>WORLD.</div>
+      </div>
+    </section>
+    <section id="shop" class="shop-section">
+      <div class="section-heading"><div><p class="eyebrow">MADE FOR YOUR ROTATION</p><h2>THE COLLECTION</h2></div><span id="product-total">LOADING DROP…</span></div>
+      <div id="products" class="product-grid"><div class="empty-state">Loading the collection…</div></div>
+    </section>
+    <section id="story" class="story">
+      <p class="eyebrow">MORE THAN A FIT</p><h2>STYLE IN<br><span>SYNC.</span></h2><p>Minimal by design. Recognisable by identity. Welcome to SYNCOUTFITS.</p>
+    </section>
+  </main>
+  <footer><a class="brand brand-footer" href="/"><span class="brand-word">SYNC</span><span class="brand-rule"></span></a><span>© <span id="year"></span> SYNCOUTFITS</span><a href="mailto:hello@syncoutfits.com">CONTACT</a></footer>
+  <div id="cart-panel" class="cart-panel" aria-hidden="true">
+    <div class="cart-top"><h2>YOUR BAG</h2><button id="cart-close" class="icon-button" aria-label="Close cart">×</button></div>
+    <div id="cart-items" class="cart-items"></div><div class="cart-bottom"><div class="cart-total"><span>SUBTOTAL</span><strong id="cart-subtotal">₦0</strong></div><p class="muted">Delivery is calculated separately. Checkout can be added after payment-provider setup.</p><button id="cart-continue" class="button button-dark">CONTINUE SHOPPING</button></div>
+  </div>
+  <div id="scrim" class="scrim"></div>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body></html>
