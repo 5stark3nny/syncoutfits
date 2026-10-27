@@ -56,7 +56,16 @@ async function initDb() {
       items JSONB NOT NULL, total_kobo BIGINT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS store_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1), bank_name TEXT NOT NULL DEFAULT '',
+      account_name TEXT NOT NULL DEFAULT '', account_number TEXT NOT NULL DEFAULT '',
+      delivery_fee_kobo BIGINT NOT NULL DEFAULT 0 CHECK (delivery_fee_kobo >= 0),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
+  await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_name TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS customer_phone TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS delivery_address TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS delivery_city TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS delivery_state TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS delivery_landmark TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS subtotal_kobo BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS delivery_fee_kobo BIGINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'bank_transfer', ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+  await pool.query("INSERT INTO store_settings(id) VALUES(1) ON CONFLICT (id) DO NOTHING");
+
   if (adminEmail && process.env.ADMIN_PASSWORD) {
     const existing = await pool.query("SELECT id FROM admins WHERE email=$1", [adminEmail]);
     if (!existing.rowCount) {
