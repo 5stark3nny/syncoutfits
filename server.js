@@ -37,8 +37,16 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS customers (
       id BIGSERIAL PRIMARY KEY, full_name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
+      email_verified BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE;
+    CREATE TABLE IF NOT EXISTS customer_tokens (
+      id BIGSERIAL PRIMARY KEY, customer_id BIGINT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      purpose TEXT NOT NULL CHECK (purpose IN ('verify_email','reset_password')),
+      token_hash TEXT UNIQUE NOT NULL, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS customer_tokens_customer_purpose_idx ON customer_tokens(customer_id,purpose);
     CREATE TABLE IF NOT EXISTS admins (
       id SERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -139,6 +147,27 @@ function validateProduct(b) {
   }
   return null;
 }
+async function sendCustomerEmail({to,subject,text}) {
+  const { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) throw new Error("Email delivery is not configured. Set SMTP_HOST, SMTP_USER and SMTP_PASS in the backend environment.");
+  const transporter = nodemailer.createTransport({
+    host: SMTP_HOST, port: Number(SMTP_PORT || 587), secure: SMTP_SECURE === "true",
+    auth: { user: SMTP_USER, pass: SMTP_PASS }
+  });
+  await transporter.sendMail({ from: SMTP_FROM || SMTP_USER, to, subject, text });
+}
+function publicBaseUrl(req) {
+  const configured = (process.env.PUBLIC_BASE_URL || "").trim().replace(/\/$/, "");
+  if (configured) return configured;
+  return production ? "" : `${req.protocol}://${req.get("host")}`;
+}
+async function issueCustomerToken(customerId,purpose) {
+  const raw = crypto.randomBytes(32).toString("hex");
+  const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
+  await pool.query("DELETE FROM customer_tokens WHERE customer_id=$1 AND purpose=$2", [customerId,purpose]);
+  await pool.query("INSERT INTO customer_tokens(customer_id,purpose,token_hash,expires_at) VALUES($1,$2,$3,NOW()+$4::interval)", [customerId,purpose,tokenHash,purpose === "verify_email" ? "24 hours" : "1 hour"]);
+  return raw;
+}
 async function sendCartEmail(event) {
   const { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, ADMIN_NOTIFICATION_EMAIL } = process.env;
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !ADMIN_NOTIFICATION_EMAIL) return false;
@@ -173,41 +202,94 @@ app.post("/api/customer/signup", loginLimiter, async (req, res) => {
     }
     const hash = await bcrypt.hash(password, 12);
     const saved = await pool.query(
-      "INSERT INTO customers(full_name,email,password_hash) VALUES($1,$2,$3) RETURNING id,full_name,email",
+      "INSERT INTO customers(full_name,email,password_hash,email_verified) VALUES($1,$2,$3,FALSE) RETURNING id,full_name,email",
       [name, email, hash]
     );
     const customer = saved.rows[0];
-    const token = jwt.sign({ role: "customer", id: customer.id, email: customer.email }, jwtSecret, { expiresIn: "14d" });
-    res.cookie("sync_customer", token, { httpOnly: true, secure: production, sameSite: "lax", maxAge: 14 * 24 * 60 * 60 * 1000, path: "/" });
-    res.status(201).json({ ok: true, customer: { id: customer.id, name: customer.full_name, email: customer.email } });
+    const raw = await issueCustomerToken(customer.id,"verify_email");
+    const base = publicBaseUrl(req);
+    if (!base) return res.status(503).json({ error: "Email verification is not configured yet. Please try again later." });
+    await sendCustomerEmail({to:customer.email,subject:"Verify your SYNCOUTFITS email",text:`Hello ${customer.full_name},\n\nVerify your email address by opening this link within 24 hours:\n${base}/?verify_email=${raw}\n\nIf you did not create this account, you can ignore this message.`});
+    res.status(201).json({ ok:true, verificationRequired:true, message:"Account created. Check your email for a verification link before signing in." });
   } catch (e) {
-    if (e.code === "23505") return res.status(409).json({ error: "An account with this email already exists. Please sign in." });
+    if (e.code === "23505") return res.status(409).json({ error: "An account with this email already exists. Try signing in or resetting your password." });
     console.error("Customer signup failed:", e.message);
-    res.status(500).json({ error: "Could not create your account. Please try again." });
+    res.status(500).json({ error: "Could not create your account or send verification email. Please try again." });
   }
+});
+app.post("/api/customer/verify-email", loginLimiter, async (req,res) => {
+  try {
+    const raw=String(req.body.token||"");
+    if (!/^[a-f0-9]{64}$/.test(raw)) return res.status(400).json({error:"This verification link is invalid or expired. Request a new one."});
+    const hash=crypto.createHash("sha256").update(raw).digest("hex");
+    const result=await pool.query("SELECT id,customer_id FROM customer_tokens WHERE token_hash=$1 AND purpose='verify_email' AND expires_at>NOW()",[hash]);
+    if (!result.rowCount) return res.status(400).json({error:"This verification link is invalid or expired. Request a new one."});
+    await pool.query("UPDATE customers SET email_verified=TRUE WHERE id=$1",[result.rows[0].customer_id]);
+    await pool.query("DELETE FROM customer_tokens WHERE id=$1",[result.rows[0].id]);
+    res.json({ok:true,message:"Email verified. You can now sign in."});
+  } catch(e){console.error("Email verification failed:",e.message);res.status(500).json({error:"Could not verify your email. Please try again."});}
+});
+app.post("/api/customer/resend-verification",loginLimiter,async(req,res)=>{
+  const email=String(req.body.email||"").trim().toLowerCase();
+  try {
+    const found=await pool.query("SELECT id,full_name,email,email_verified FROM customers WHERE email=$1",[email]);
+    if(found.rowCount&&!found.rows[0].email_verified){
+      const customer=found.rows[0],raw=await issueCustomerToken(customer.id,"verify_email"),base=publicBaseUrl(req);
+      if(!base) return res.status(503).json({error:"Email delivery is not configured yet."});
+      await sendCustomerEmail({to:customer.email,subject:"Verify your SYNCOUTFITS email",text:`Hello ${customer.full_name},\n\nVerify your email within 24 hours:\n${base}/?verify_email=${raw}\n\nIf you did not request this, ignore this message.`});
+    }
+    res.json({ok:true,message:"If that email belongs to an unverified account, a new verification link has been sent."});
+  }catch(e){console.error("Resend verification failed:",e.message);res.status(500).json({error:"Could not send the email right now. Please try again later."});}
 });
 app.post("/api/customer/login", loginLimiter, async (req, res) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
-    const found = await pool.query("SELECT id,full_name,email,password_hash FROM customers WHERE email=$1", [email]);
+    const found = await pool.query("SELECT id,full_name,email,password_hash,email_verified FROM customers WHERE email=$1", [email]);
     if (!found.rowCount || !(await bcrypt.compare(password, found.rows[0].password_hash))) {
       return res.status(401).json({ error: "Incorrect email or password." });
     }
     const customer = found.rows[0];
+    if (!customer.email_verified) return res.status(403).json({error:"Please verify your email before signing in.",verificationRequired:true});
     const token = jwt.sign({ role: "customer", id: customer.id, email: customer.email }, jwtSecret, { expiresIn: "14d" });
     res.cookie("sync_customer", token, { httpOnly: true, secure: production, sameSite: "lax", maxAge: 14 * 24 * 60 * 60 * 1000, path: "/" });
     res.json({ ok: true, customer: { id: customer.id, name: customer.full_name, email: customer.email } });
   } catch (e) { console.error("Customer login failed:", e.message); res.status(500).json({ error: "Could not sign in. Please try again." }); }
+});
+app.post("/api/customer/forgot-password",loginLimiter,async(req,res)=>{
+  const email=String(req.body.email||"").trim().toLowerCase();
+  try{
+    const found=await pool.query("SELECT id,full_name,email FROM customers WHERE email=$1",[email]);
+    if(found.rowCount){
+      const customer=found.rows[0],raw=await issueCustomerToken(customer.id,"reset_password"),base=publicBaseUrl(req);
+      if(!base) return res.status(503).json({error:"Password reset email is not configured yet."});
+      await sendCustomerEmail({to:customer.email,subject:"Reset your SYNCOUTFITS password",text:`Hello ${customer.full_name},\n\nUse this link to reset your password within one hour:\n${base}/?reset_password=${raw}\n\nIf you did not request this, ignore this message. Your password will not change.`});
+    }
+    res.json({ok:true,message:"If an account exists for that email, a password reset link has been sent."});
+  }catch(e){console.error("Password reset request failed:",e.message);res.status(500).json({error:"Could not send a reset email right now. Please try again later."});}
+});
+app.post("/api/customer/reset-password",loginLimiter,async(req,res)=>{
+  try{
+    const raw=String(req.body.token||""),password=String(req.body.password||"");
+    if(!/^[a-f0-9]{64}$/.test(raw)) return res.status(400).json({error:"This reset link is invalid or expired. Request another."});
+    if(password.length<10||password.length>200) return res.status(400).json({error:"Choose a password with at least 10 characters."});
+    const hash=crypto.createHash("sha256").update(raw).digest("hex");
+    const found=await pool.query("SELECT id,customer_id FROM customer_tokens WHERE token_hash=$1 AND purpose='reset_password' AND expires_at>NOW()",[hash]);
+    if(!found.rowCount) return res.status(400).json({error:"This reset link is invalid or expired. Request another."});
+    const passwordHash=await bcrypt.hash(password,12),customerId=found.rows[0].customer_id;
+    await pool.query("UPDATE customers SET password_hash=$1 WHERE id=$2",[passwordHash,customerId]);
+    await pool.query("DELETE FROM customer_tokens WHERE customer_id=$1",[customerId]);
+    res.json({ok:true,message:"Password updated. You can now sign in."});
+  }catch(e){console.error("Password reset failed:",e.message);res.status(500).json({error:"Could not reset your password. Please try again."});}
 });
 app.post("/api/customer/logout", (req, res) => {
   res.clearCookie("sync_customer", { httpOnly: true, secure: production, sameSite: "lax", path: "/" });
   res.json({ ok: true });
 });
 app.get("/api/customer/me", customerAuth, async (req, res) => {
-  const r = await pool.query("SELECT id,full_name,email,created_at FROM customers WHERE id=$1", [req.customer.id]);
-  if (!r.rowCount) return res.status(401).json({ error: "Account not found. Please sign in again." });
-  res.json({ customer: { id: r.rows[0].id, name: r.rows[0].full_name, email: r.rows[0].email, createdAt: r.rows[0].created_at } });
+  const r = await pool.query("SELECT id,full_name,email,created_at,email_verified FROM customers WHERE id=$1 AND email_verified=TRUE", [req.customer.id]);
+  if (!r.rowCount) return res.status(401).json({ error: "Account not found or email is not verified. Please sign in again." });
+  res.json({ customer: { id: r.rows[0].id, name: r.rows[0].full_name, email: r.rows[0].email, createdAt: r.rows[0].created_at, emailVerified: r.rows[0].email_verified } });
 });
 app.get("/api/customer/orders", customerAuth, async (req, res) => {
   try {
