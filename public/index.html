@@ -26,6 +26,7 @@
       <span class="brand-word">SYNC</span><span class="brand-rule"></span>
     </a>
     <nav><a href="#shop">SHOP</a><a href="#story">OUR STORY</a></nav>
+    <button id="account-open" class="cart-button" type="button">MY ACCOUNT</button>
     <button id="cart-open" class="cart-button" aria-label="Open cart">BAG <span id="cart-count">0</span></button>
   </header>
   <main>
@@ -50,6 +51,26 @@
     </section>
   </main>
   <footer><a class="brand brand-footer" href="/"><span class="brand-word">SYNC</span><span class="brand-rule"></span></a><span>© <span id="year"></span> SYNCOUTFITS</span><a href="mailto:hello@syncoutfits.com">CONTACT</a></footer>
+  <div id="account-panel" class="cart-panel account-panel" aria-hidden="true">
+    <div class="cart-top"><h2 id="account-title">MY ACCOUNT</h2><button id="account-close" class="icon-button" aria-label="Close account panel">×</button></div>
+    <div id="account-content" class="cart-items">
+      <p class="muted">Create an account or sign in to keep track of your orders.</p>
+      <div class="account-tabs"><button type="button" id="show-login" class="active">SIGN IN</button><button type="button" id="show-signup">CREATE ACCOUNT</button></div>
+      <form id="customer-login-form" class="checkout-form">
+        <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="160"></label>
+        <label>Password<input name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="200"></label>
+        <button class="button button-dark" type="submit">SIGN IN</button><p class="muted account-message" role="status"></p>
+      </form>
+      <form id="customer-signup-form" class="checkout-form" hidden>
+        <label>Full name<input name="name" autocomplete="name" required maxlength="120"></label>
+        <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="160"></label>
+        <label>Create password<input name="password" type="password" autocomplete="new-password" required minlength="10" maxlength="200"></label>
+        <p class="muted">Use at least 10 characters. Keep your password private.</p>
+        <button class="button button-dark" type="submit">CREATE ACCOUNT</button><p class="muted account-message" role="status"></p>
+      </form>
+    </div>
+    <div class="cart-bottom"><button id="account-logout" class="button button-dark" type="button" hidden>SIGN OUT</button></div>
+  </div>
   <div id="cart-panel" class="cart-panel" aria-hidden="true">
     <div class="cart-top"><h2>YOUR BAG</h2><button id="cart-close" class="icon-button" aria-label="Close cart">×</button></div>
     <div id="cart-items" class="cart-items"></div><div class="cart-bottom"><div class="cart-total"><span>SUBTOTAL</span><strong id="cart-subtotal">₦0</strong></div>
