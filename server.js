@@ -17,7 +17,7 @@ const pool = new Pool({
 });
 app.disable("x-powered-by");
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "3mb" }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -95,7 +95,12 @@ function validateProduct(b) {
       (!Number.isFinite(Number(b.salePrice)) || Number(b.salePrice) < 0 || Number(b.salePrice) > Number(b.price))) {
     return "Sale price must be between zero and the original price.";
   }
-  if (b.imageUrl && (!/^https:\/\/|^http:\/\//i.test(b.imageUrl))) return "Image URL must start with http:// or https://.";
+  if (b.imageUrl) {
+    const remoteImage = /^https?:\/\//i.test(b.imageUrl);
+    const uploadedImage = /^data:image\/(jpeg|png|webp|gif);base64,[a-z0-9+/=]+$/i.test(b.imageUrl);
+    if (!remoteImage && !uploadedImage) return "Choose a valid image file or use an HTTPS image URL.";
+    if (b.imageUrl.length > 2_000_000) return "Image is too large after optimization. Choose a smaller image.";
+  }
   return null;
 }
 async function sendCartEmail(event) {
