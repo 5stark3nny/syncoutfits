@@ -104,4 +104,4 @@ Prices are entered in naira and stored as integer kobo. The sale price must not 
 
 ## Before selling for real
 
-Before selling for real, add a privacy notice, backups and monitoring. Manual checkout checks current stock while creating orders but does not reserve or decrement stock; reconcile inventory carefully and consider a reservation/stock-decrement workflow before scaling. Payment status must only be changed to Paid after checking the actual bank credit. Test on staging first.
+Before selling for real, add a privacy notice, backups and monitoring. Manual checkout reserves stock when an order is created and releases it if an unpaid order is cancelled. Review unpaid orders and cancel abandoned orders so stock is returned. Payment status must only be changed to Paid after checking the actual bank credit. Test on staging first.
