@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
+const crypto = require("crypto");
 const helmet = require("helmet");
 const cookieParser = require("cookie-parser");
 const bcrypt = require("bcryptjs");
@@ -56,6 +57,12 @@ async function initDb() {
       items JSONB NOT NULL, total_kobo BIGINT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_number TEXT UNIQUE;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_name TEXT NOT NULL DEFAULT '';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_phone TEXT NOT NULL DEFAULT '';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address TEXT NOT NULL DEFAULT '';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS city_state TEXT NOT NULL DEFAULT '';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS landmark TEXT NOT NULL DEFAULT '';
   `);
   if (adminEmail && process.env.ADMIN_PASSWORD) {
     const existing = await pool.query("SELECT id FROM admins WHERE email=$1", [adminEmail]);
@@ -187,6 +194,63 @@ app.delete("/api/admin/products/:id", adminAuth, async (req, res) => {
   const r = await pool.query("UPDATE products SET active=FALSE,updated_at=NOW() WHERE id=$1 RETURNING id", [Number(req.params.id)]);
   if (!r.rowCount) return res.status(404).json({ error: "Product not found." });
   res.json({ ok: true });
+});
+app.post("/api/orders", cartLimiter, async (req, res) => {
+  const b = req.body || {};
+  const customer = {
+    name: String(b.name || "").trim().slice(0,120),
+    phone: String(b.phone || "").trim().slice(0,40),
+    email: String(b.email || "").trim().toLowerCase().slice(0,160),
+    address: String(b.address || "").trim().slice(0,300),
+    cityState: String(b.cityState || "").trim().slice(0,120),
+    landmark: String(b.landmark || "").trim().slice(0,200)
+  };
+  if (!customer.name || !customer.phone || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email) ||
+      !customer.address || !customer.cityState || !customer.landmark) {
+    return res.status(400).json({ error: "Please complete all customer and delivery fields with a valid email." });
+  }
+  if (!Array.isArray(b.items) || !b.items.length || b.items.length > 50) {
+    return res.status(400).json({ error: "Your bag is empty or contains too many items." });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const orderItems = [];
+    let totalKobo = 0;
+    for (const item of b.items) {
+      const id = Number(item.id), qty = Number(item.qty), size = String(item.size || "").trim().slice(0,30);
+      if (!Number.isInteger(id) || id < 1 || !Number.isInteger(qty) || qty < 1 || qty > 50) {
+        throw Object.assign(new Error("One of the item quantities is invalid."), { status: 400 });
+      }
+      const pr = await client.query("SELECT * FROM products WHERE id=$1 AND active=TRUE FOR UPDATE", [id]);
+      if (!pr.rowCount) throw Object.assign(new Error("A product in your bag is no longer available."), { status: 409 });
+      const p = pr.rows[0];
+      if (qty > p.stock) throw Object.assign(new Error(p.name + " does not have enough stock for that quantity."), { status: 409 });
+      if (size && p.sizes?.length && !p.sizes.includes(size)) throw Object.assign(new Error("Please select a valid size for " + p.name + "."), { status: 400 });
+      const unitKobo = p.sale_price_kobo == null ? Number(p.price_kobo) : Number(p.sale_price_kobo);
+      totalKobo += unitKobo * qty;
+      orderItems.push({ id:p.id, name:p.name, size, qty, unitPrice:Number(unitKobo)/100, lineTotal:Number(unitKobo*qty)/100 });
+      await client.query("UPDATE products SET stock=stock-$1,updated_at=NOW() WHERE id=$2", [qty,id]);
+    }
+    const orderNumber = String(crypto.randomInt(10000000000000, 99999999999999));
+    const saved = await client.query(
+      `INSERT INTO orders(order_number,reference,customer_email,customer_name,customer_phone,delivery_address,city_state,landmark,items,total_kobo,status)
+       VALUES($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,'received') RETURNING id,order_number,status,created_at`,
+      [orderNumber,customer.email,customer.name,customer.phone,customer.address,customer.cityState,customer.landmark,JSON.stringify(orderItems),totalKobo]
+    );
+    await client.query("COMMIT");
+    res.status(201).json({ ok:true, orderNumber:saved.rows[0].order_number, status:saved.rows[0].status, total:totalKobo/100, customerName:customer.name });
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch {}
+    console.error("Order creation failed:", e.message);
+    res.status(e.status || (e.code === "23505" ? 409 : 500)).json({ error: e.status ? e.message : e.code === "23505" ? "Please submit again to generate a new order number." : "Could not submit your order. Please try again." });
+  } finally { client.release(); }
+});
+app.get("/api/admin/orders", adminAuth, async (req, res) => {
+  try {
+    const r = await pool.query("SELECT id,order_number,customer_name,customer_phone,customer_email,delivery_address,city_state,landmark,items,total_kobo,status,created_at FROM orders ORDER BY created_at DESC LIMIT 200");
+    res.json(r.rows.map(o => ({ ...o, total:Number(o.total_kobo)/100, items:typeof o.items === "string" ? JSON.parse(o.items) : o.items })));
+  } catch (e) { console.error(e); res.status(500).json({ error:"Could not load orders." }); }
 });
 app.get("/api/admin/cart-events", adminAuth, async (req, res) => {
   const r = await pool.query("SELECT id,product_id,product_name,quantity,size,visitor_id,created_at,notified_at FROM cart_events ORDER BY created_at DESC LIMIT 100");

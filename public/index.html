@@ -40,7 +40,17 @@
   <footer><a class="brand brand-footer" href="/"><span class="brand-word">SYNC</span><span class="brand-rule"></span></a><span>© <span id="year"></span> SYNCOUTFITS</span><a href="mailto:hello@syncoutfits.com">CONTACT</a></footer>
   <div id="cart-panel" class="cart-panel" aria-hidden="true">
     <div class="cart-top"><h2>YOUR BAG</h2><button id="cart-close" class="icon-button" aria-label="Close cart">×</button></div>
-    <div id="cart-items" class="cart-items"></div><div class="cart-bottom"><div class="cart-total"><span>SUBTOTAL</span><strong id="cart-subtotal">₦0</strong></div><p class="muted">Delivery is calculated separately. Checkout can be added after payment-provider setup.</p><button id="cart-continue" class="button button-dark">CONTINUE SHOPPING</button></div>
+    <div id="cart-items" class="cart-items"></div><div class="cart-bottom"><div class="cart-total"><span>SUBTOTAL</span><strong id="cart-subtotal">₦0</strong></div>
+    <form id="checkout-form" class="checkout-form">
+      <h3>DELIVERY DETAILS</h3><p class="muted">Submit your order directly on the website. You'll receive a 14-digit order number.</p>
+      <label>Full name<input name="name" autocomplete="name" required maxlength="120"></label>
+      <label>Phone number<input name="phone" type="tel" autocomplete="tel" required maxlength="40"></label>
+      <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="160"></label>
+      <label>Delivery address<input name="address" autocomplete="street-address" required maxlength="300"></label>
+      <label>City / State<input name="cityState" autocomplete="address-level2" required maxlength="120"></label>
+      <label>Nearby landmark<input name="landmark" required maxlength="200"></label>
+      <button id="place-order" class="button button-dark" type="submit">PLACE ORDER</button><p id="checkout-message" class="muted" role="status"></p>
+    </form><button id="cart-continue" class="button button-light">CONTINUE SHOPPING</button></div>
   </div>
   <div id="scrim" class="scrim"></div>
   <div id="toast" class="toast" role="status"></div>
