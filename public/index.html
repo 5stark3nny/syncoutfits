@@ -68,6 +68,16 @@
         <p class="muted">Use at least 10 characters. Keep your password private.</p>
         <button class="button button-dark" type="submit">CREATE ACCOUNT</button><p class="muted account-message" role="status"></p>
       </form>
+      <form id="forgot-password-form" class="checkout-form" hidden>
+        <p class="muted">We will email you a secure password-reset link if an account exists.</p>
+        <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="160"></label>
+        <button class="button button-dark" type="submit">SEND RESET LINK</button><p class="muted account-message" role="status"></p>
+      </form>
+      <form id="reset-password-form" class="checkout-form" hidden>
+        <label>New password<input name="password" type="password" autocomplete="new-password" required minlength="10" maxlength="200"></label>
+        <button class="button button-dark" type="submit">SAVE NEW PASSWORD</button><p class="muted account-message" role="status"></p>
+      </form>
+      <p id="account-verification-message" class="muted" role="status"></p>
     </div>
     <div class="cart-bottom"><button id="account-logout" class="button button-dark" type="button" hidden>SIGN OUT</button></div>
   </div>
