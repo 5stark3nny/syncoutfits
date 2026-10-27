@@ -40,7 +40,21 @@
   <footer><a class="brand brand-footer" href="/"><span class="brand-word">SYNC</span><span class="brand-rule"></span></a><span>© <span id="year"></span> SYNCOUTFITS</span><a href="mailto:hello@syncoutfits.com">CONTACT</a></footer>
   <div id="cart-panel" class="cart-panel" aria-hidden="true">
     <div class="cart-top"><h2>YOUR BAG</h2><button id="cart-close" class="icon-button" aria-label="Close cart">×</button></div>
-    <div id="cart-items" class="cart-items"></div><div class="cart-bottom"><div class="cart-total"><span>SUBTOTAL</span><strong id="cart-subtotal">₦0</strong></div><p class="muted">Delivery is calculated separately. Checkout can be added after payment-provider setup.</p><button id="cart-continue" class="button button-dark">CONTINUE SHOPPING</button></div>
+    <div id="cart-items" class="cart-items"></div><div class="cart-bottom" id="cart-bottom"><div class="cart-total"><span>SUBTOTAL</span><strong id="cart-subtotal">₦0</strong></div><button id="cart-continue" class="button button-dark">PROCEED TO CHECKOUT</button></div>
+    <form id="checkout-form" class="checkout-form" hidden>
+      <h3>DELIVERY DETAILS</h3>
+      <label>Full name<input name="name" required maxlength="120" autocomplete="name"></label>
+      <label>Email address<input name="email" type="email" required maxlength="254" autocomplete="email"></label>
+      <label>Phone number<input name="phone" type="tel" required maxlength="40" autocomplete="tel"></label>
+      <label>Full delivery address<textarea name="address" rows="2" required maxlength="500" placeholder="House number, street, area"></textarea></label>
+      <div class="checkout-two"><label>City / town<input name="city" required maxlength="100" autocomplete="address-level2"></label><label>State<input name="state" required maxlength="100" autocomplete="address-level1"></label></div>
+      <label>Nearby landmark<input name="landmark" required maxlength="300" placeholder="E.g. opposite..., near..."></label>
+      <p class="muted">Your order will be awaiting payment until the store confirms your transfer.</p>
+      <p id="checkout-error" class="checkout-error" role="alert"></p>
+      <button id="place-order" class="button button-dark" type="submit">PLACE ORDER</button>
+      <button id="checkout-back" class="button button-light" type="button">BACK TO BAG</button>
+    </form>
+    <section id="order-confirmation" class="order-confirmation" hidden aria-live="polite"></section>
   </div>
   <div id="scrim" class="scrim"></div>
   <div id="toast" class="toast" role="status"></div>

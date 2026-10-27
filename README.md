@@ -4,20 +4,21 @@ A black-and-white clothing storefront with an Express API, PostgreSQL-backed pro
 
 ## What is implemented
 
-- Responsive storefront and shopping bag/cart.
+- Responsive storefront, shopping bag/cart, and manual bank-transfer checkout with required delivery details and nearby landmark.
+- Server-priced orders saved to PostgreSQL, configurable bank details/delivery fee, and admin order status management. Orders remain awaiting payment until manually verified.
 - Product catalogue backed by PostgreSQL.
 - Admin sign-in, product creation/editing, stock management, original price and optional sale price.
 - Admin-only product API routes protected by a signed, HTTP-only cookie.
 - Cart events stored in PostgreSQL and displayed in the admin dashboard API.
-- Optional SMTP email notifications when a shopper adds an item to their cart.
+- Optional SMTP email notifications for cart activity and new orders.
 - Render deployment blueprint.
 
 ## Important limitations in this starter
 
-- Checkout/payment processing is **not implemented yet**. The storefront explicitly says so; do not accept payments until a verified payment-provider flow and order fulfilment are added.
+- Automated payment-provider processing is not implemented. Manual bank-transfer checkout is available; the owner must verify bank credits before marking orders paid.
 - Cart activity is a signal of interest, not a sale or reservation. It does not reserve stock.
 - Product photos currently use image URLs. Use URLs for images you own or have permission to use. A future update can add secure image uploads.
-- A dedicated visual admin dashboard is available at `/admin.html` after deployment.
+- The admin dashboard at `/admin.html` includes product management, bank account/delivery settings, and order status management.
 - Configure SMTP to receive emails. Without SMTP, events are still saved and available from `GET /api/admin/cart-events`.
 - This initial build creates the first admin from `ADMIN_EMAIL` and `ADMIN_PASSWORD` only when that email does not already exist. Changing those environment variables later does not automatically reset the stored password.
 
@@ -103,4 +104,4 @@ Prices are entered in naira and stored as integer kobo. The sale price must not 
 
 ## Before selling for real
 
-Add a full admin dashboard UI, implement and verify payment-provider checkout and webhook signature validation, order creation, shipping details, privacy notice, backups, monitoring, and a stock reservation/decrement transaction. Test on staging first.
+Before selling for real, add a privacy notice, backups and monitoring. Manual checkout reserves stock when an order is created and releases it if an unpaid order is cancelled. Review unpaid orders and cancel abandoned orders so stock is returned. Payment status must only be changed to Paid after checking the actual bank credit. Test on staging first.

@@ -33,6 +33,8 @@ async function addToCart(id){
   try { await fetch("/api/cart-events",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({productId:p.id,quantity:1,size,visitorId})}); }
   catch(e){console.warn("Cart event notification did not send",e)}
 }
+let checkoutSettings={deliveryFee:0};
+async function loadCheckoutSettings(){try{checkoutSettings=await fetch("/api/store-settings").then(r=>r.json())}catch(e){console.warn("Checkout settings unavailable",e)}}
 function renderCart(){
   $("#cart-count").textContent=cart.reduce((n,x)=>n+x.qty,0);
   $("#cart-subtotal").textContent=naira(cart.reduce((n,x)=>n+x.price*x.qty,0));
@@ -43,5 +45,16 @@ function openCart(){$("#cart-panel").classList.add("open");$("#cart-panel").setA
 function closeCart(){$("#cart-panel").classList.remove("open");$("#cart-panel").setAttribute("aria-hidden","true");$("#scrim").classList.remove("show")}
 $("#products").addEventListener("click",e=>{const b=e.target.closest("[data-add]");if(b)addToCart(Number(b.dataset.add))});
 $("#cart-items").addEventListener("click",e=>{const b=e.target.closest("[data-remove]");if(b){cart=cart.filter(x=>!(x.id===Number(b.dataset.remove)&&x.size===b.dataset.size));saveCart()}});
-$("#cart-open").addEventListener("click",openCart);$("#cart-close").addEventListener("click",closeCart);$("#scrim").addEventListener("click",closeCart);$("#cart-continue").addEventListener("click",closeCart);
+$("#cart-open").addEventListener("click",openCart);$("#cart-close").addEventListener("click",closeCart);$("#scrim").addEventListener("click",closeCart);$("#cart-continue").addEventListener("click",async()=>{if(!cart.length){toast("Your bag is empty.");return}await loadCheckoutSettings();$("#cart-bottom").hidden=true;$("#checkout-form").hidden=false;$("#order-confirmation").hidden=true;});
+$("#checkout-back").addEventListener("click",()=>{$("#checkout-form").hidden=true;$("#cart-bottom").hidden=false;});
+$("#checkout-form").addEventListener("submit",async e=>{
+  e.preventDefault();const button=$("#place-order"),error=$("#checkout-error");button.disabled=true;button.textContent="PLACING ORDER…";error.textContent="";
+  const f=new FormData(e.target),payload={name:f.get("name"),email:f.get("email"),phone:f.get("phone"),address:f.get("address"),city:f.get("city"),state:f.get("state"),landmark:f.get("landmark"),items:cart.map(x=>({id:x.id,qty:x.qty,size:x.size||""}))};
+  try{
+    const r=await fetch("/api/orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});const data=await r.json();if(!r.ok)throw Error(data.error||"Could not place order.");
+    cart=[];saveCart();$("#checkout-form").hidden=true;$("#cart-bottom").hidden=true;
+    $("#order-confirmation").hidden=false;$("#order-confirmation").innerHTML='<h3>ORDER RECEIVED</h3><p>Your order reference is <strong>'+safe(data.reference)+'</strong>.</p><p>Items: <strong>'+naira(data.subtotal)+'</strong> · Delivery: <strong>'+naira(data.deliveryFee)+'</strong></p><p>Transfer exactly <strong>'+naira(data.total)+'</strong> to the account below.</p><div class="bank-details"><p><span>Bank</span><strong>'+safe(data.bank.bankName)+'</strong></p><p><span>Account name</span><strong>'+safe(data.bank.accountName)+'</strong></p><p><span>Account number</span><strong>'+safe(data.bank.accountNumber)+'</strong></p><p><span>Order reference</span><strong>'+safe(data.reference)+'</strong></p></div><p>Use the order reference as your transfer narration if your bank allows it. Your order remains <strong>AWAITING PAYMENT</strong> until we verify the transfer. Do not pay twice if you are unsure; contact the store with your order reference.</p><button type="button" id="order-done" class="button button-dark">DONE</button>';
+    $("#order-done").addEventListener("click",closeCart);
+  }catch(err){error.textContent=err.message}finally{button.disabled=false;button.textContent="PLACE ORDER"}
+});
 $("#year").textContent=new Date().getFullYear();renderCart();loadProducts();
