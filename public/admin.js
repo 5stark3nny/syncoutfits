@@ -21,6 +21,15 @@ async function loadProducts(){items=await api("/api/admin/products");$("#stat-pr
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 $("#admin-products").addEventListener("click",async e=>{const edit=e.target.closest("[data-edit]"),hide=e.target.closest("[data-hide]");if(edit){const p=items.find(x=>x.id===Number(edit.dataset.edit)),f=$("#product-form");for(const k of ["id","name","description","imageUrl","price","stock"]){f.elements[k].value=k==="id"?p.id:k==="imageUrl"?p.imageUrl??"":p[k]??""}setSelectedImage(p.imageUrl||"");$("#image-file").value="";f.elements.salePrice.value=p.salePrice??"";f.elements.sizes.value=(p.sizes||[]).join(", ");f.elements.active.checked=p.active;$("#form-title").textContent="Edit product";$("#save-product").textContent="UPDATE PRODUCT";window.scrollTo({top:0,behavior:"smooth"})}if(hide){try{await api(`/api/admin/products/${hide.dataset.hide}`,{method:"DELETE"});await refreshAll()}catch(err){alert(err.message)}}});
 async function loadEvents(){const ev=await api("/api/admin/cart-events");$("#stat-events").textContent=ev.length;$("#events-body").innerHTML=ev.length?ev.map(e=>`<tr><td>${esc(e.product_name)}</td><td>${e.quantity}</td><td>${esc(e.size||"—")}</td><td>${new Date(e.created_at).toLocaleString()}</td><td>${e.notified_at?"SENT":"SMTP NOT SENT"}</td></tr>`).join(""):'<tr><td colspan="5">No cart activity yet.</td></tr>'}
-async function refreshAll(){try{await Promise.all([loadProducts(),loadEvents()])}catch(e){toast(e.message)}}
+async function loadOrders(){
+  const orders=await api("/api/admin/orders");
+  $("#orders-body").innerHTML=orders.length?orders.map(o=>{
+    const itemText=(o.items||[]).map(i=>`${esc(i.name)}${i.size?` (${esc(i.size)})`:""} × ${Number(i.qty)||0}`).join("<br>");
+    const pieces=(o.items||[]).reduce((n,i)=>n+(Number(i.qty)||0),0);
+    return `<tr><td><strong>${esc(o.order_number||o.reference||"—")}</strong><br><button class="text-button" data-copy-order="${esc(o.order_number||o.reference||"")}">COPY</button></td><td>${esc(o.customer_name||"—")}</td><td>${esc(o.customer_phone||"—")}<br>${esc(o.customer_email||"—")}</td><td>${itemText}<br><strong>${pieces} piece(s)</strong></td><td>${esc(o.delivery_address||"—")}<br>${esc(o.city_state||"—")}<br>Landmark: ${esc(o.landmark||"—")}</td><td>${money(o.total)}</td><td>${esc(o.status||"received")}</td><td>${new Date(o.created_at).toLocaleString()}</td></tr>`;
+  }).join(""):'<tr><td colspan="8">No website orders yet.</td></tr>';
+}
+$("#orders-body").addEventListener("click",async e=>{const b=e.target.closest("[data-copy-order]");if(!b)return;try{await navigator.clipboard.writeText(b.dataset.copyOrder);b.textContent="COPIED"}catch{alert("Order number: "+b.dataset.copyOrder)}});
+async function refreshAll(){try{await Promise.all([loadProducts(),loadEvents(),loadOrders()])}catch(e){toast(e.message)}}
 function toast(m){console.warn(m);$("#form-message").textContent=m}
-$("#refresh").addEventListener("click",refreshAll);$("#refresh-events").addEventListener("click",refreshAll);checkLogin();
+$("#refresh").addEventListener("click",refreshAll);$("#refresh-events").addEventListener("click",refreshAll);$("#refresh-orders").addEventListener("click",loadOrders);checkLogin();
