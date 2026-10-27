@@ -66,5 +66,31 @@ $("#checkout-form").addEventListener("submit",async e=>{
   }catch(err){msg.textContent=err.message}
   finally{btn.disabled=false;btn.textContent="PLACE ORDER"}
 });
-$("#cart-open").addEventListener("click",openCart);$("#cart-close").addEventListener("click",closeCart);$("#scrim").addEventListener("click",closeCart);$("#cart-continue").addEventListener("click",closeCart);
+function openAccount(){closeCart();$("#account-panel").classList.add("open");$("#account-panel").setAttribute("aria-hidden","false");$("#scrim").classList.add("show")}
+function closeAccount(){$("#account-panel").classList.remove("open");$("#account-panel").setAttribute("aria-hidden","true");$("#scrim").classList.remove("show")}
+function accountMessage(form,msg){const el=form.querySelector(".account-message");if(el)el.textContent=msg}
+function renderAccount(customer,orders=[]){
+  const content=$("#account-content");
+  if(!customer){$("#account-title").textContent="MY ACCOUNT";$("#account-logout").hidden=true;$("#customer-login-form").hidden=false;$("#customer-signup-form").hidden=true;$("#show-login").closest(".account-tabs").hidden=false;return}
+  $("#account-title").textContent="MY ACCOUNT";$("#account-logout").hidden=false;$("#customer-login-form").hidden=true;$("#customer-signup-form").hidden=true;$("#show-login").closest(".account-tabs").hidden=true;
+  content.innerHTML=`<div class="account-welcome"><p class="eyebrow">SIGNED IN</p><h3>${safe(customer.name)}</h3><p class="muted">${safe(customer.email)}</p></div><h3 class="history-heading">YOUR ORDER HISTORY</h3>${orders.length?orders.map(o=>`<article class="history-order"><div><strong>Order #${safe(o.orderNumber)}</strong><span>${new Date(o.createdAt).toLocaleDateString("en-NG",{year:"numeric",month:"short",day:"numeric"})}</span></div><p>${o.items.map(i=>safe(i.name)+ (i.size?" · "+safe(i.size):"")+" × "+i.qty).join("<br>")}</p><div class="history-total"><strong>${naira(o.total)}</strong><span>${safe(o.status)}</span></div></article>`).join(""):'<p class="empty-state">No orders yet. Orders you place while signed in will appear here.</p>'}`;
+}
+async function refreshAccount(){
+  try{const r=await fetch("/api/customer/me");if(!r.ok){renderAccount(null);return}const d=await r.json();const or=await fetch("/api/customer/orders");const orders=or.ok?await or.json():[];renderAccount(d.customer,orders)}
+  catch{renderAccount(null)}
+}
+async function submitCustomerForm(form,endpoint){
+  const button=form.querySelector('button[type="submit"]');button.disabled=true;accountMessage(form,"");
+  try{const payload=Object.fromEntries(new FormData(form).entries());const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});const data=await r.json();if(!r.ok)throw Error(data.error||"Please try again.");form.reset();await refreshAccount();toast(endpoint.endsWith("signup")?"Account created.":"Signed in.");}
+  catch(err){accountMessage(form,err.message)}
+  finally{button.disabled=false}
+}
+$("#account-open").addEventListener("click",async()=>{await refreshAccount();openAccount()});
+$("#account-close").addEventListener("click",closeAccount);
+$("#show-login").addEventListener("click",()=>{$("#customer-login-form").hidden=false;$("#customer-signup-form").hidden=true;$("#show-login").classList.add("active");$("#show-signup").classList.remove("active")});
+$("#show-signup").addEventListener("click",()=>{$("#customer-login-form").hidden=true;$("#customer-signup-form").hidden=false;$("#show-signup").classList.add("active");$("#show-login").classList.remove("active")});
+$("#customer-login-form").addEventListener("submit",e=>{e.preventDefault();submitCustomerForm(e.currentTarget,"/api/customer/login")});
+$("#customer-signup-form").addEventListener("submit",e=>{e.preventDefault();submitCustomerForm(e.currentTarget,"/api/customer/signup")});
+$("#account-logout").addEventListener("click",async()=>{await fetch("/api/customer/logout",{method:"POST"});renderAccount(null);toast("Signed out.")});
+$("#cart-open").addEventListener("click",openCart);$("#cart-close").addEventListener("click",closeCart);$("#scrim").addEventListener("click",()=>{closeCart();closeAccount()});$("#cart-continue").addEventListener("click",closeCart);
 $("#year").textContent=new Date().getFullYear();renderCart();loadProducts();
