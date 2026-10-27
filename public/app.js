@@ -71,10 +71,13 @@ function closeAccount(){$("#account-panel").classList.remove("open");$("#account
 function accountMessage(form,msg){const el=form.querySelector(".account-message");if(el)el.textContent=msg}
 const signedOutAccountMarkup = $("#account-content").innerHTML;
 function bindSignedOutAccount(){
-  $("#show-login").onclick=()=>{$("#customer-login-form").hidden=false;$("#customer-signup-form").hidden=true;$("#show-login").classList.add("active");$("#show-signup").classList.remove("active")};
-  $("#show-signup").onclick=()=>{$("#customer-login-form").hidden=true;$("#customer-signup-form").hidden=false;$("#show-signup").classList.add("active");$("#show-login").classList.remove("active")};
+  $("#show-login").onclick=()=>{$("#customer-login-form").hidden=false;$("#customer-signup-form").hidden=true;$("#forgot-password-form").hidden=true;$("#reset-password-form").hidden=true;$("#show-login").classList.add("active");$("#show-signup").classList.remove("active")};
+  $("#show-signup").onclick=()=>{$("#customer-login-form").hidden=true;$("#customer-signup-form").hidden=false;$("#forgot-password-form").hidden=true;$("#reset-password-form").hidden=true;$("#show-signup").classList.add("active");$("#show-login").classList.remove("active")};
+  $("#forgot-password-open").onclick=()=>{$("#customer-login-form").hidden=true;$("#customer-signup-form").hidden=true;$("#forgot-password-form").hidden=false;$("#reset-password-form").hidden=true;};
   $("#customer-login-form").onsubmit=e=>{e.preventDefault();submitCustomerForm(e.currentTarget,"/api/customer/login")};
   $("#customer-signup-form").onsubmit=e=>{e.preventDefault();submitCustomerForm(e.currentTarget,"/api/customer/signup")};
+  $("#forgot-password-form").onsubmit=e=>{e.preventDefault();submitCustomerForm(e.currentTarget,"/api/customer/forgot-password")};
+  $("#reset-password-form").onsubmit=e=>{e.preventDefault();const p=Object.fromEntries(new FormData(e.currentTarget).entries());p.token=new URLSearchParams(location.search).get("reset_password");submitPayload(e.currentTarget,"/api/customer/reset-password",p)};
 }
 function renderAccount(customer,orders=[]){
   const content=$("#account-content");
@@ -86,15 +89,29 @@ async function refreshAccount(){
   try{const r=await fetch("/api/customer/me");if(!r.ok){renderAccount(null);return}const d=await r.json();const or=await fetch("/api/customer/orders");const orders=or.ok?await or.json():[];renderAccount(d.customer,orders)}
   catch{renderAccount(null)}
 }
-async function submitCustomerForm(form,endpoint){
+async function submitPayload(form,endpoint,payload){
   const button=form.querySelector('button[type="submit"]');button.disabled=true;accountMessage(form,"");
-  try{const payload=Object.fromEntries(new FormData(form).entries());const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});const data=await r.json();if(!r.ok)throw Error(data.error||"Please try again.");form.reset();await refreshAccount();toast(endpoint.endsWith("signup")?"Account created.":"Signed in.");}
-  catch(err){accountMessage(form,err.message)}
+  try{const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});const data=await r.json();if(!r.ok)throw Error(data.error||"Please try again.");accountMessage(form,data.message||"Done.");if(endpoint.endsWith("/login")){form.reset();await refreshAccount();toast("Signed in.");}else if(endpoint.endsWith("/signup")){form.reset();accountMessage(form,data.message||"Check your email to verify your account.");}else if(endpoint.endsWith("/reset-password")){$("#reset-password-form").hidden=true;$("#customer-login-form").hidden=false;history.replaceState(null,"",location.pathname);}}
+  catch(err){accountMessage(form,err.message);if(err.message.includes("verify your email"))$("#account-verification-message").textContent="Need another link? Enter your email on the sign-in form and choose Resend verification email."}
   finally{button.disabled=false}
+}
+async function submitCustomerForm(form,endpoint){const payload=Object.fromEntries(new FormData(form).entries());await submitPayload(form,endpoint,payload)}
+async function processAccountLink(){
+  const q=new URLSearchParams(location.search),verify=q.get("verify_email"),reset=q.get("reset_password");
+  if(verify){
+    $("#account-open").click();
+    const form=$("#customer-login-form");$("#customer-signup-form").hidden=true;$("#forgot-password-form").hidden=true;
+    try{const r=await fetch("/api/customer/verify-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:verify})});const d=await r.json();$("#account-verification-message").textContent=d.message||d.error||"Verification finished.";if(r.ok)$("#customer-login-form").hidden=false;}catch{$("#account-verification-message").textContent="Could not verify right now. Please try again."}
+    history.replaceState(null,"",location.pathname);
+  } else if(reset){
+    $("#account-open").click();$("#customer-login-form").hidden=true;$("#customer-signup-form").hidden=true;$("#forgot-password-form").hidden=true;$("#reset-password-form").hidden=false;
+  }
 }
 $("#account-open").addEventListener("click",async()=>{await refreshAccount();openAccount()});
 $("#account-close").addEventListener("click",closeAccount);
 bindSignedOutAccount();
+processAccountLink();
+
 $("#account-logout").addEventListener("click",async()=>{await fetch("/api/customer/logout",{method:"POST"});renderAccount(null);toast("Signed out.")});
 $("#cart-open").addEventListener("click",openCart);$("#cart-close").addEventListener("click",closeCart);$("#scrim").addEventListener("click",()=>{closeCart();closeAccount()});$("#cart-continue").addEventListener("click",closeCart);
 $("#year").textContent=new Date().getFullYear();renderCart();loadProducts();
