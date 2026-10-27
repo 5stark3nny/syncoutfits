@@ -162,6 +162,7 @@ app.post("/api/orders", cartLimiter, async (req, res) => {
       if (product.stock<qty) throw Object.assign(new Error("Not enough stock for "+product.name+". Available: "+product.stock+"."),{status:409});
       if (product.sizes && product.sizes.length && !product.sizes.includes(size)) throw Object.assign(new Error("Choose a valid size for "+product.name+"."),{status:400});
       const unit=Number(product.sale_price_kobo==null?product.price_kobo:product.sale_price_kobo);
+      await client.query("UPDATE products SET stock=stock-$1,updated_at=NOW() WHERE id=$2",[qty,id]);
       subtotal+=unit*qty;
       normalized.push({id:product.id,name:product.name,imageUrl:product.image_url,size,quantity:qty,unitPriceKobo:unit,lineTotalKobo:unit*qty});
     }
@@ -198,12 +199,28 @@ app.get("/api/admin/orders", adminAuth, async (req,res) => {
 app.put("/api/admin/orders/:id/status", adminAuth, async (req,res) => {
   const allowed=["awaiting_payment","payment_review","paid","processing","dispatched","delivered","cancelled"], status=String(req.body.status||"");
   if (!allowed.includes(status)) return res.status(400).json({error:"Invalid order status."});
-  const current=await pool.query("SELECT status FROM orders WHERE id=$1",[Number(req.params.id)]);
-  if (!current.rowCount) return res.status(404).json({error:"Order not found."});
-  if (["awaiting_payment","payment_review"].includes(status)&&["paid","processing","dispatched","delivered"].includes(current.rows[0].status)) return res.status(409).json({error:"A paid or fulfilled order cannot be moved back to unpaid."});
-  if (["processing","dispatched","delivered"].includes(status)&&["awaiting_payment","payment_review"].includes(current.rows[0].status)) return res.status(409).json({error:"Confirm payment first by setting status to Paid."});
-  const r=await pool.query("UPDATE orders SET status=$1,updated_at=NOW() WHERE id=$2 RETURNING id,status",[status,Number(req.params.id)]);
-  res.json({ok:true,id:r.rows[0].id,status:r.rows[0].status});
+  const client=await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const current=await client.query("SELECT * FROM orders WHERE id=$1 FOR UPDATE",[Number(req.params.id)]);
+    if (!current.rowCount) { await client.query("ROLLBACK"); return res.status(404).json({error:"Order not found."}); }
+    const oldStatus=current.rows[0].status;
+    if (["awaiting_payment","payment_review"].includes(status)&&["paid","processing","dispatched","delivered"].includes(oldStatus)) throw Object.assign(new Error("A paid or fulfilled order cannot be moved back to unpaid."),{status:409});
+    if (["processing","dispatched","delivered"].includes(status)&&["awaiting_payment","payment_review"].includes(oldStatus)) throw Object.assign(new Error("Confirm payment first by setting status to Paid."),{status:409});
+    if (oldStatus==="cancelled" && status!=="cancelled") throw Object.assign(new Error("A cancelled order cannot be reopened. Create a new order instead."),{status:409});
+    if (status==="cancelled" && ["paid","processing","dispatched","delivered"].includes(oldStatus)) throw Object.assign(new Error("This order has been paid or fulfilled. Handle any refund or cancellation separately."),{status:409});
+    if (status==="cancelled" && oldStatus!=="cancelled") {
+      const lines=Array.isArray(current.rows[0].items)?current.rows[0].items:[];
+      for (const line of lines) await client.query("UPDATE products SET stock=stock+$1,updated_at=NOW() WHERE id=$2",[Number(line.quantity)||0,Number(line.id)]);
+    }
+    const r=await client.query("UPDATE orders SET status=$1,updated_at=NOW() WHERE id=$2 RETURNING id,status",[status,Number(req.params.id)]);
+    await client.query("COMMIT");
+    res.json({ok:true,id:r.rows[0].id,status:r.rows[0].status});
+  } catch(e) {
+    await client.query("ROLLBACK");
+    res.status(e.status||500).json({error:e.status?e.message:"Could not update order status."});
+    if (!e.status) console.error("Order status update failed:",e);
+  } finally { client.release(); }
 });
 app.get("/api/health", async (req, res) => {
   try { await pool.query("SELECT 1"); res.json({ ok: true, database: "connected" }); }
