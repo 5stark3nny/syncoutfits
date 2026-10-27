@@ -148,13 +148,32 @@ function validateProduct(b) {
   return null;
 }
 async function sendCustomerEmail({to,subject,text}) {
+  // Resend's HTTPS API works on Render Free and does not require a Google App Password.
+  const apiKey = (process.env.RESEND_API_KEY || "").trim();
+  const from = (process.env.RESEND_FROM || process.env.SMTP_FROM || "SYNCOUTFITS <onboarding@resend.dev>").trim();
+  if (apiKey) {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [to], subject, text })
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      console.error("Resend email API failed:", response.status, detail.slice(0, 500));
+      throw new Error("Email provider could not send the message. Check RESEND_API_KEY and sender-domain verification.");
+    }
+    return await response.json();
+  }
+  // Keep SMTP as an optional fallback for hosts that support it.
   const { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) throw new Error("Email delivery is not configured. Set SMTP_HOST, SMTP_USER and SMTP_PASS in the backend environment.");
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    throw new Error("Email delivery is not configured. Set RESEND_API_KEY in the backend environment.");
+  }
   const transporter = nodemailer.createTransport({
     host: SMTP_HOST, port: Number(SMTP_PORT || 587), secure: SMTP_SECURE === "true",
     auth: { user: SMTP_USER, pass: SMTP_PASS }
   });
-  await transporter.sendMail({ from: SMTP_FROM || SMTP_USER, to, subject, text });
+  return transporter.sendMail({ from: SMTP_FROM || SMTP_USER, to, subject, text });
 }
 function publicBaseUrl(req) {
   const configured = (process.env.PUBLIC_BASE_URL || "").trim().replace(/\/$/, "");
