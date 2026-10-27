@@ -71,12 +71,15 @@ function closeAccount(){$("#account-panel").classList.remove("open");$("#account
 function accountMessage(form,msg){const el=form.querySelector(".account-message");if(el)el.textContent=msg}
 const signedOutAccountMarkup = $("#account-content").innerHTML;
 function bindSignedOutAccount(){
-  $("#show-login").onclick=()=>{$("#customer-login-form").hidden=false;$("#customer-signup-form").hidden=true;$("#forgot-password-form").hidden=true;$("#reset-password-form").hidden=true;$("#show-login").classList.add("active");$("#show-signup").classList.remove("active")};
-  $("#show-signup").onclick=()=>{$("#customer-login-form").hidden=true;$("#customer-signup-form").hidden=false;$("#forgot-password-form").hidden=true;$("#reset-password-form").hidden=true;$("#show-signup").classList.add("active");$("#show-login").classList.remove("active")};
-  $("#forgot-password-open").onclick=()=>{$("#customer-login-form").hidden=true;$("#customer-signup-form").hidden=true;$("#forgot-password-form").hidden=false;$("#reset-password-form").hidden=true;};
+  $("#show-login").onclick=()=>{$("#customer-login-form").hidden=false;$("#customer-signup-form").hidden=true;$("#forgot-password-form").hidden=true;$("#resend-verification-form").hidden=true;$("#resend-verification-form").hidden=true;$("#reset-password-form").hidden=true;$("#show-login").classList.add("active");$("#show-signup").classList.remove("active")};
+  $("#show-signup").onclick=()=>{$("#customer-login-form").hidden=true;$("#customer-signup-form").hidden=false;$("#forgot-password-form").hidden=true;$("#resend-verification-form").hidden=true;$("#reset-password-form").hidden=true;$("#show-signup").classList.add("active");$("#show-login").classList.remove("active")};
+  $("#forgot-password-open").onclick=()=>{$("#customer-login-form").hidden=true;$("#customer-signup-form").hidden=true;$("#forgot-password-form").hidden=false;$("#resend-verification-form").hidden=true;$("#reset-password-form").hidden=true;};
+  $("#account-verification-message").onclick=()=>{};
+  $("#resend-verification-open").onclick=()=>{$("#customer-login-form").hidden=true;$("#customer-signup-form").hidden=true;$("#forgot-password-form").hidden=true;$("#resend-verification-form").hidden=false;$("#reset-password-form").hidden=true;};
   $("#customer-login-form").onsubmit=e=>{e.preventDefault();submitCustomerForm(e.currentTarget,"/api/customer/login")};
   $("#customer-signup-form").onsubmit=e=>{e.preventDefault();submitCustomerForm(e.currentTarget,"/api/customer/signup")};
   $("#forgot-password-form").onsubmit=e=>{e.preventDefault();submitCustomerForm(e.currentTarget,"/api/customer/forgot-password")};
+  $("#resend-verification-form").onsubmit=e=>{e.preventDefault();submitCustomerForm(e.currentTarget,"/api/customer/resend-verification")};
   $("#reset-password-form").onsubmit=e=>{e.preventDefault();const p=Object.fromEntries(new FormData(e.currentTarget).entries());p.token=new URLSearchParams(location.search).get("reset_password");submitPayload(e.currentTarget,"/api/customer/reset-password",p)};
 }
 function renderAccount(customer,orders=[]){
