@@ -168,7 +168,7 @@ app.post("/api/customer/signup", loginLimiter, async (req, res) => {
     const name = String(req.body.name || "").trim().slice(0, 120);
     const email = String(req.body.email || "").trim().toLowerCase().slice(0, 160);
     const password = String(req.body.password || "");
-    if (!name || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length < 10 || password.length > 200) {
+    if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 10 || password.length > 200) {
       return res.status(400).json({ error: "Enter your name, a valid email, and a password of at least 10 characters." });
     }
     const hash = await bcrypt.hash(password, 12);
