@@ -59,7 +59,13 @@
       <form id="customer-login-form" class="checkout-form">
         <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="160"></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="200"></label>
-        <button class="button button-dark" type="submit">SIGN IN</button><p class="muted account-message" role="status"></p>
+        <button class="button button-dark" type="submit">SIGN IN</button><button id="resend-verification-open" type="button" class="text-action">Resend verification email</button><p class="muted account-message" role="status"></p>
+      </form>
+      <button id="forgot-password-open" type="button">Forgot password?</button>
+      <form id="resend-verification-form" class="checkout-form" hidden>
+        <p class="muted">Enter your email and we will send a fresh verification link if needed.</p>
+        <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="160"></label>
+        <button class="button button-dark" type="submit">RESEND VERIFICATION</button><p class="muted account-message" role="status"></p>
       </form>
       <form id="customer-signup-form" class="checkout-form" hidden>
         <label>Full name<input name="name" autocomplete="name" required maxlength="120"></label>
