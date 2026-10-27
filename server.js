@@ -34,6 +34,11 @@ if (production && (!jwtSecret || jwtSecret.length < 32)) {
 async function initDb() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set.");
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id BIGSERIAL PRIMARY KEY, full_name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS admins (
       id SERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -57,6 +62,7 @@ async function initDb() {
       items JSONB NOT NULL, total_kobo BIGINT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_id BIGINT REFERENCES customers(id) ON DELETE SET NULL;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_number TEXT UNIQUE;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_name TEXT NOT NULL DEFAULT '';
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_phone TEXT NOT NULL DEFAULT '';
@@ -72,6 +78,29 @@ async function initDb() {
       console.log("Initial admin created for", adminEmail);
     }
   }
+}
+function customerAuth(req, res, next) {
+  const token = req.cookies.sync_customer;
+  if (!token) return res.status(401).json({ error: "Please sign in to view your account." });
+  try {
+    const data = jwt.verify(token, jwtSecret);
+    if (data.role !== "customer" || !data.id) throw new Error("Invalid customer session");
+    req.customer = { id: Number(data.id), email: data.email };
+    next();
+  } catch {
+    res.clearCookie("sync_customer", { httpOnly: true, secure: production, sameSite: "lax", path: "/" });
+    return res.status(401).json({ error: "Your session expired. Please sign in again." });
+  }
+}
+function optionalCustomerAuth(req, res, next) {
+  const token = req.cookies.sync_customer;
+  if (token) {
+    try {
+      const data = jwt.verify(token, jwtSecret);
+      if (data.role === "customer" && data.id) req.customer = { id: Number(data.id), email: data.email };
+    } catch {}
+  }
+  next();
 }
 function adminAuth(req, res, next) {
   const token = req.cookies.sync_admin;
@@ -134,6 +163,63 @@ app.get("/api/products", async (req, res) => {
     res.json(result.rows.map(productView));
   } catch (e) { console.error(e); res.status(500).json({ error: "Could not load products." }); }
 });
+app.post("/api/customer/signup", loginLimiter, async (req, res) => {
+  try {
+    const name = String(req.body.name || "").trim().slice(0, 120);
+    const email = String(req.body.email || "").trim().toLowerCase().slice(0, 160);
+    const password = String(req.body.password || "");
+    if (!name || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length < 10 || password.length > 200) {
+      return res.status(400).json({ error: "Enter your name, a valid email, and a password of at least 10 characters." });
+    }
+    const hash = await bcrypt.hash(password, 12);
+    const saved = await pool.query(
+      "INSERT INTO customers(full_name,email,password_hash) VALUES($1,$2,$3) RETURNING id,full_name,email",
+      [name, email, hash]
+    );
+    const customer = saved.rows[0];
+    const token = jwt.sign({ role: "customer", id: customer.id, email: customer.email }, jwtSecret, { expiresIn: "14d" });
+    res.cookie("sync_customer", token, { httpOnly: true, secure: production, sameSite: "lax", maxAge: 14 * 24 * 60 * 60 * 1000, path: "/" });
+    res.status(201).json({ ok: true, customer: { id: customer.id, name: customer.full_name, email: customer.email } });
+  } catch (e) {
+    if (e.code === "23505") return res.status(409).json({ error: "An account with this email already exists. Please sign in." });
+    console.error("Customer signup failed:", e.message);
+    res.status(500).json({ error: "Could not create your account. Please try again." });
+  }
+});
+app.post("/api/customer/login", loginLimiter, async (req, res) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+    const found = await pool.query("SELECT id,full_name,email,password_hash FROM customers WHERE email=$1", [email]);
+    if (!found.rowCount || !(await bcrypt.compare(password, found.rows[0].password_hash))) {
+      return res.status(401).json({ error: "Incorrect email or password." });
+    }
+    const customer = found.rows[0];
+    const token = jwt.sign({ role: "customer", id: customer.id, email: customer.email }, jwtSecret, { expiresIn: "14d" });
+    res.cookie("sync_customer", token, { httpOnly: true, secure: production, sameSite: "lax", maxAge: 14 * 24 * 60 * 60 * 1000, path: "/" });
+    res.json({ ok: true, customer: { id: customer.id, name: customer.full_name, email: customer.email } });
+  } catch (e) { console.error("Customer login failed:", e.message); res.status(500).json({ error: "Could not sign in. Please try again." }); }
+});
+app.post("/api/customer/logout", (req, res) => {
+  res.clearCookie("sync_customer", { httpOnly: true, secure: production, sameSite: "lax", path: "/" });
+  res.json({ ok: true });
+});
+app.get("/api/customer/me", customerAuth, async (req, res) => {
+  const r = await pool.query("SELECT id,full_name,email,created_at FROM customers WHERE id=$1", [req.customer.id]);
+  if (!r.rowCount) return res.status(401).json({ error: "Account not found. Please sign in again." });
+  res.json({ customer: { id: r.rows[0].id, name: r.rows[0].full_name, email: r.rows[0].email, createdAt: r.rows[0].created_at } });
+});
+app.get("/api/customer/orders", customerAuth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      "SELECT order_number,customer_name,items,total_kobo,status,created_at FROM orders WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 100",
+      [req.customer.id]
+    );
+    res.json(r.rows.map(o => ({ orderNumber: o.order_number, customerName: o.customer_name,
+      items: typeof o.items === "string" ? JSON.parse(o.items) : o.items,
+      total: Number(o.total_kobo) / 100, status: o.status, createdAt: o.created_at })));
+  } catch (e) { console.error("Customer order history failed:", e.message); res.status(500).json({ error: "Could not load your order history." }); }
+});
 app.post("/api/admin/login", loginLimiter, async (req, res) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
@@ -195,7 +281,7 @@ app.delete("/api/admin/products/:id", adminAuth, async (req, res) => {
   if (!r.rowCount) return res.status(404).json({ error: "Product not found." });
   res.json({ ok: true });
 });
-app.post("/api/orders", cartLimiter, async (req, res) => {
+app.post("/api/orders", cartLimiter, optionalCustomerAuth, async (req, res) => {
   const b = req.body || {};
   const customer = {
     name: String(b.name || "").trim().slice(0,120),
@@ -208,6 +294,9 @@ app.post("/api/orders", cartLimiter, async (req, res) => {
   if (!customer.name || !customer.phone || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email) ||
       !customer.address || !customer.cityState || !customer.landmark) {
     return res.status(400).json({ error: "Please complete all customer and delivery fields with a valid email." });
+  }
+  if (req.customer && req.customer.email !== customer.email) {
+    return res.status(400).json({ error: "Use the email address connected to your signed-in account." });
   }
   if (!Array.isArray(b.items) || !b.items.length || b.items.length > 50) {
     return res.status(400).json({ error: "Your bag is empty or contains too many items." });
@@ -234,9 +323,9 @@ app.post("/api/orders", cartLimiter, async (req, res) => {
     }
     const orderNumber = String(crypto.randomInt(10000000000000, 99999999999999));
     const saved = await client.query(
-      `INSERT INTO orders(order_number,reference,customer_email,customer_name,customer_phone,delivery_address,city_state,landmark,items,total_kobo,status)
-       VALUES($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,'received') RETURNING id,order_number,status,created_at`,
-      [orderNumber,customer.email,customer.name,customer.phone,customer.address,customer.cityState,customer.landmark,JSON.stringify(orderItems),totalKobo]
+      `INSERT INTO orders(order_number,reference,customer_id,customer_email,customer_name,customer_phone,delivery_address,city_state,landmark,items,total_kobo,status)
+       VALUES($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'received') RETURNING id,order_number,status,created_at`,
+      [orderNumber,req.customer ? req.customer.id : null,customer.email,customer.name,customer.phone,customer.address,customer.cityState,customer.landmark,JSON.stringify(orderItems),totalKobo]
     );
     await client.query("COMMIT");
     res.status(201).json({ ok:true, orderNumber:saved.rows[0].order_number, status:saved.rows[0].status, total:totalKobo/100, customerName:customer.name });
